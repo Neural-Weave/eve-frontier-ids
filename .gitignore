@@ -1,0 +1,9 @@
+node_modules
+frontend/node_modules
+dist
+frontend/dist
+saved-wallet.json
+.env
+*.log
+.DS_Store
+Thumbs.db

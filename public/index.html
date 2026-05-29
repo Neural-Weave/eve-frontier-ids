@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVE Frontier IDS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #060606; color: #b8a882;
+      font-family: 'Courier New', monospace;
+      height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+    }
+    #alert-flash {
+      position: fixed; inset: 0; background: rgba(196,58,32,0.2);
+      pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 999;
+    }
+    #alert-flash.active { opacity: 1; }
+    #header {
+      background: #080808; border-bottom: 1px solid #2a2118;
+      padding: 0 16px; height: 38px; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+    }
+    #status-dot { width: 7px; height: 7px; border-radius: 50%; background: #8b2a1a; flex-shrink: 0; }
+    #status-dot.online { background: #5a9a3a; box-shadow: 0 0 5px #5a9a3a44; }
+    #header-title { font-size: 11px; color: #c8a951; letter-spacing: 4px; flex: 1; }
+    #header-base { font-size: 9px; color: #6a5a3a; letter-spacing: 2px; }
+    #status-text { font-size: 9px; color: #4a3a2a; }
+    #clock { font-size: 10px; color: #8a7a5a; letter-spacing: 1px; margin-left: 12px; }
+    #char-name { font-size: 9px; color: #6a5a3a; letter-spacing: 2px; margin-left: 8px; }
+    #alert-banner {
+      display: none; background: #1a0808; border-bottom: 1px solid #8b2a1a;
+      color: #c43a20; text-align: center; padding: 7px; font-size: 10px;
+      letter-spacing: 4px; animation: pulse 0.8s infinite; flex-shrink: 0;
+    }
+    #alert-banner.show { display: block; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+    #stats-bar {
+      background: #080808; border-bottom: 1px solid #1e1a12;
+      height: 52px; display: flex; flex-shrink: 0;
+    }
+    .stat-cell {
+      flex: 1; border-right: 1px solid #1e1a12;
+      padding: 6px 14px; display: flex; flex-direction: column; justify-content: center;
+    }
+    .stat-cell:last-child { border-right: none; }
+    .stat-cell-label { font-size: 8px; color: #3a2e1a; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+    .stat-cell-value { font-size: 20px; font-weight: bold; color: #c8a951; line-height: 1; }
+    .stat-cell-value.danger { color: #c43a20; }
+    .stat-cell-value.warn   { color: #c47a20; }
+    .stat-cell-value.safe   { color: #5a9a3a; }
+    #fuel-cell {
+      flex: 1.4; padding: 6px 14px;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    #fuel-cell-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    #fuel-cell-label { font-size: 8px; color: #3a2e1a; letter-spacing: 1px; text-transform: uppercase; }
+    #fuel-cell-time  { font-size: 11px; color: #5a9a3a; font-weight: bold; }
+    #fuel-cell-units { font-size: 9px; color: #4a3a2a; }
+    .fuel-bar-bg { height: 3px; background: #1e1a12; }
+    #fuel-bar-fill { height: 100%; width: 100%; background: #5a9a3a; transition: width 1s, background 1s; }
+    #threat-cell {
+      flex: 1; border-right: 1px solid #1e1a12;
+      padding: 6px 14px; display: flex; flex-direction: column; justify-content: center;
+    }
+    #threat-label { font-size: 8px; color: #3a2e1a; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
+    #threat-text  { font-size: 13px; color: #5a9a3a; font-weight: bold; letter-spacing: 2px; margin-bottom: 3px; }
+    .threat-bar-bg { height: 3px; background: #1e1a12; }
+    #threat-fill { height: 100%; width: 0%; background: #5a9a3a; transition: width 0.5s, background 0.5s; }
+    #main { display: grid; grid-template-columns: 280px 1fr; flex: 1; overflow: hidden; }
+    #left-panel {
+      border-right: 1px solid #1e1a12; display: flex;
+      flex-direction: column; overflow: hidden; background: #070707;
+    }
+    #left-title {
+      padding: 7px 14px; font-size: 8px; letter-spacing: 3px; color: #6a5a3a;
+      text-transform: uppercase; border-bottom: 1px solid #1e1a12; background: #080808; flex-shrink: 0;
+    }
+    #structures-list { flex: 1; overflow-y: auto; }
+    #structures-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #0f0d08; padding: 1px; }
+    .struct-card { background: #090909; padding: 10px 12px; transition: background 0.15s; }
+    .struct-card:hover { background: #0d0b07; }
+    .struct-card.offline { border-left: 2px solid #8b2a1a; }
+    .struct-card.online  { border-left: 2px solid #1e1a12; }
+    .struct-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .struct-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+    .struct-dot.ONLINE  { background: #5a9a3a; }
+    .struct-dot.OFFLINE { background: #c43a20; }
+    .struct-dot.UNKNOWN { background: #2a2118; }
+    .struct-name { font-size: 10px; color: #b8a882; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .struct-status { font-size: 8px; letter-spacing: 1px; }
+    .struct-status.ONLINE  { color: #5a9a3a; }
+    .struct-status.OFFLINE { color: #c43a20; }
+    .struct-status.UNKNOWN { color: #2a2118; }
+    .struct-type { font-size: 8px; color: #2a2118; }
+    #attackers-section { border-top: 1px solid #1e1a12; padding: 8px 14px; flex-shrink: 0; background: #080808; }
+    #attackers-title { font-size: 8px; color: #4a3a2a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .attacker-row { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; border-bottom: 1px solid #0f0d08; }
+    .attacker-name  { color: #c47a6a; }
+    .attacker-count { color: #c8a951; }
+    #right-panel { display: flex; flex-direction: column; overflow: hidden; background: #060606; }
+    #filter-bar {
+      padding: 5px 10px; border-bottom: 1px solid #1e1a12;
+      display: flex; gap: 5px; align-items: center; background: #080808; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .filter-btn {
+      padding: 2px 9px; border: 1px solid #2a2118; background: transparent;
+      color: #3a2e1a; font-size: 8px; font-family: 'Courier New', monospace;
+      letter-spacing: 1px; cursor: pointer; transition: all 0.15s; text-transform: uppercase;
+    }
+    .filter-btn.active                 { color: #6a5a3a; border-color: #3a2e1a; }
+    .filter-btn.active.f-player        { color: #c43a20; border-color: #8b2a1a; background: rgba(139,42,26,0.1); }
+    .filter-btn.active.f-base          { color: #a83a20; border-color: #6a2010; background: rgba(100,30,10,0.1); }
+    .filter-btn.active.f-warning       { color: #c47a20; border-color: #7a4a10; background: rgba(122,74,16,0.1); }
+    .filter-btn.active.f-structure     { color: #8a7a5a; border-color: #4a3a2a; background: rgba(42,28,10,0.12); }
+    .filter-btn.active.f-fuel          { color: #a88a3a; border-color: #6a5a2a; background: rgba(42,35,10,0.12); }
+    .filter-btn.active.f-info          { color: #4a3a2a; border-color: #2a2118; }
+    #clear-btn { margin-left: auto; color: #2a2118; border-color: #1e1a12; font-size: 8px; padding: 2px 8px; cursor: pointer; background: transparent; font-family: 'Courier New', monospace; letter-spacing: 1px; }
+    #clear-btn:hover { color: #4a3a2a; }
+    #event-feed { flex: 1; overflow-y: auto; padding: 4px; }
+    .event { padding: 5px 10px; margin-bottom: 2px; border-left: 2px solid #1e1a12; font-size: 11px; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-2px); } to { opacity:1; } }
+    .event.player    { background: rgba(139,42,26,0.14); border-left-color: #8b2a1a; }
+    .event.base      { background: rgba(100,30,10,0.10); border-left-color: #6a1a0a; }
+    .event.warning   { background: rgba(122,74,16,0.10); border-left-color: #7a4a10; }
+    .event.structure { background: rgba(42,28,10,0.18);  border-left-color: #3a2810; }
+    .event.fuel      { background: transparent;           border-left-color: #2a1e08; }
+    .event.info      { background: transparent;           border-left-color: #1a1510; }
+    .event-meta { font-size: 8px; color: #2a2118; margin-bottom: 2px; }
+    .event-msg  { line-height: 1.4; color: #6a5a3a; }
+    .event.player    .event-msg { color: #c47a6a; }
+    .event.base      .event-msg { color: #a86a5a; }
+    .event.warning   .event-msg { color: #c4944a; }
+    .event.structure .event-msg { color: #8a7a5a; }
+    .event.fuel      .event-msg { color: #7a6a4a; }
+    ::-webkit-scrollbar { width: 2px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2118; }
+  </style>
+</head>
+<body>
+<div id="alert-flash"></div>
+<div id="header">
+  <div id="status-dot"></div>
+  <span id="header-title">EVE FRONTIER // INTRUSION DETECTION SYSTEM</span>
+  <span id="header-base">YOUR BASE</span>
+  <span id="status-text">Connecting...</span>
+  <span id="clock"></span>
+  <span id="char-name"></span>
+  <button onclick="disconnect()" style="margin-left:12px;background:transparent;border:1px solid #2a2118;color:#3a2e1a;font-family:'Courier New',monospace;font-size:8px;letter-spacing:2px;padding:3px 8px;cursor:pointer;" onmouseover="this.style.color='#c43a20';this.style.borderColor='#8b2a1a'" onmouseout="this.style.color='#3a2e1a';this.style.borderColor='#2a2118'">DISCONNECT</button>
+</div>
+<div id="alert-banner">BASE UNDER ATTACK — IMMEDIATE THREAT DETECTED</div>
+<div id="stats-bar">
+  <div class="stat-cell">
+    <div class="stat-cell-label">Player Attacks</div>
+    <div class="stat-cell-value danger" id="stat-player">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-cell-label">NPC Hits</div>
+    <div class="stat-cell-value warn" id="stat-npc">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-cell-label">Shots Fired</div>
+    <div class="stat-cell-value" id="stat-outgoing">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-cell-label">Turret Events</div>
+    <div class="stat-cell-value safe" id="stat-turret">0</div>
+  </div>
+  <div class="stat-cell">
+    <div class="stat-cell-label">Offline Structures</div>
+    <div class="stat-cell-value danger" id="stat-offline">0</div>
+  </div>
+  <div id="threat-cell">
+    <div id="threat-label">Threat Level</div>
+    <div id="threat-text">CLEAR</div>
+    <div class="threat-bar-bg"><div id="threat-fill"></div></div>
+  </div>
+  <div id="fuel-cell">
+    <div id="fuel-cell-top">
+      <span id="fuel-cell-label">Fuel Reserve</span>
+      <span id="fuel-cell-time">-- remaining</span>
+    </div>
+    <div id="fuel-cell-units">-- units</div>
+    <div class="fuel-bar-bg" style="margin-top:4px"><div id="fuel-bar-fill"></div></div>
+  </div>
+</div>
+<div id="main">
+  <div id="left-panel">
+    <div id="left-title">Base Structures</div>
+    <div id="structures-list">
+      <div id="structures-grid"></div>
+    </div>
+    <div id="attackers-section">
+      <div id="attackers-title">Recent Attackers</div>
+      <div id="attackers-list"><div id="no-attackers" style="font-size:9px;color:#2a2118">None detected</div></div>
+    </div>
+  </div>
+  <div id="right-panel">
+    <div id="filter-bar">
+      <button class="filter-btn active f-player"    data-filter="player"    onclick="toggleFilter(this)">PLAYER ATTACKS</button>
+      <button class="filter-btn active f-base"      data-filter="base"      onclick="toggleFilter(this)">BASE ALERTS</button>
+      <button class="filter-btn active f-warning"   data-filter="warning"   onclick="toggleFilter(this)">NPC HITS</button>
+      <button class="filter-btn active f-structure" data-filter="structure" onclick="toggleFilter(this)">STRUCTURES</button>
+      <button class="filter-btn active f-fuel"      data-filter="fuel"      onclick="toggleFilter(this)">FUEL</button>
+      <button class="filter-btn active f-info"      data-filter="info"      onclick="toggleFilter(this)">INFO</button>
+      <button id="clear-btn" onclick="clearFeed()">CLEAR</button>
+    </div>
+    <div id="event-feed">
+      <div class="event info">
+        <div class="event-meta">System</div>
+        <div class="event-msg">Waiting for events...</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const stats = { player:0, npc:0, outgoing:0, turret:0, offline:0, threatScore:0 };
+  const attackers = {};
+  const activeFilters = new Set(['player','base','warning','structure','fuel','info']);
+  const MAX_FUEL_HOURS = 355;
+  let alertBannerTimer = null;
+  let ws;
+  const typeCounters = {};
+
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent = now.toUTCString().slice(17,25) + ' UTC';
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  async function checkStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      const fromVault = new URLSearchParams(window.location.search).get('from') === 'vault';
+      if (!data.connected && !fromVault) {
+        window.location.href = '/vault/';
+      } else if (data.characterName) {
+        document.getElementById('char-name').textContent = data.characterName;
+        document.getElementById('header-base').textContent = data.characterName.toUpperCase();
+      }
+    } catch(e) {
+      console.log('Status check failed:', e);
+    }
+  }
+  checkStatus();
+
+  async function disconnect() {
+    await fetch('/api/disconnect', { method: 'POST' });
+    window.location.href = '/vault/';
+  }
+
+  function ensureStructureCard(structureId, name, type) {
+    const raw = structureId.startsWith('0x') ? structureId.slice(2,10) : structureId.slice(0,8);
+    if (document.getElementById('sc-' + raw)) return raw;
+    const t = type || 'Unknown';
+    typeCounters[t] = (typeCounters[t] || 0) + 1;
+    const label = (name && name.trim()) ? name : t + ' #' + typeCounters[t];
+    const grid = document.getElementById('structures-grid');
+    const card = document.createElement('div');
+    card.className = 'struct-card unknown';
+    card.id = 'sc-' + raw;
+    card.innerHTML =
+      '<div class="struct-card-header">' +
+        '<div class="struct-dot UNKNOWN" id="sd-' + raw + '"></div>' +
+        '<span class="struct-name" id="sn-' + raw + '">' + label + '</span>' +
+        '<span class="struct-status UNKNOWN" id="ss-' + raw + '">--</span>' +
+      '</div>' +
+      '<div class="struct-type">' + t + '</div>';
+    grid.appendChild(card);
+    return raw;
+  }
+
+  function updateStructure(name, status, chainName, structureId, type) {
+    let key = null;
+    if (structureId) key = ensureStructureCard(structureId, name, type);
+    if (!key) return;
+    const dot    = document.getElementById('sd-' + key);
+    const nameEl = document.getElementById('sn-' + key);
+    const statEl = document.getElementById('ss-' + key);
+    const card   = document.getElementById('sc-' + key);
+    if (dot)    dot.className = 'struct-dot ' + status;
+    if (statEl) { statEl.className = 'struct-status ' + status; statEl.textContent = status; }
+    if (card)   card.className = 'struct-card ' + status.toLowerCase();
+    if (nameEl && chainName && chainName.trim()) nameEl.textContent = chainName;
+    else if (nameEl && name && name.trim()) nameEl.textContent = name;
+  }
+
+  function initStructures() {
+    document.getElementById('structures-grid').innerHTML = '';
+  }
+
+  function connect() {
+    ws = new WebSocket('ws://' + location.host);
+    ws.onopen = () => {
+      document.getElementById('status-dot').classList.add('online');
+      document.getElementById('status-text').textContent = 'IDS Online';
+    };
+    ws.onclose = () => {
+      document.getElementById('status-dot').classList.remove('online');
+      document.getElementById('status-text').textContent = 'Reconnecting...';
+      setTimeout(connect, 3000);
+    };
+    ws.onmessage = (msg) => handleEvent(JSON.parse(msg.data));
+  }
+
+  function handleEvent(event) {
+    if (event.type === 'status') { addFeed('info', 'System', event.message); return; }
+
+    if (event.type === 'player_info' || event.type === 'wallet_connected') {
+      if (event.characterName) {
+        document.getElementById('char-name').textContent = event.characterName;
+        document.getElementById('header-base').textContent = event.characterName.toUpperCase();
+      }
+      return;
+    }
+
+    if (event.type === 'wallet_disconnected') { window.location.href = '/vault/'; return; }
+
+    let cls = 'info';
+    if (event.type === 'combat_incoming' && event.isPlayer)       cls = 'player';
+    else if (event.type === 'combat_incoming')                     cls = 'warning';
+    else if (['structure_offline','structure_unanchored','structure_destroyed','turret_fired','fuel_critical'].includes(event.type)) cls = 'base';
+    else if (['structure_online','structure_status_init'].includes(event.type)) cls = 'structure';
+    else if (event.type === 'fuel_warning')  cls = 'warning';
+    else if (event.type === 'fuel_update')   cls = 'fuel';
+    else if (event.severity === 'critical')  cls = 'base';
+    else if (event.severity === 'warning')   cls = 'warning';
+
+    const t = event.timestamp ? (event.timestamp.length > 20 ? new Date(event.timestamp).toLocaleTimeString() : event.timestamp) : '';
+    const typeLabel = event.type.replace(/_/g,' ').toUpperCase();
+    const msg = event.message || '';
+    if (!msg) return;
+    addFeed(cls, t + ' // ' + typeLabel, msg);
+    updateStats(event);
+    if (event.severity === 'critical') triggerAlert(event);
+  }
+
+  function updateStats(event) {
+    switch(event.type) {
+      case 'combat_incoming':
+        if (event.isPlayer) {
+          stats.player++; stats.threatScore = Math.min(100, stats.threatScore + 30);
+          document.getElementById('stat-player').textContent = stats.player;
+          trackAttacker(event.attacker);
+        } else {
+          stats.npc++; stats.threatScore = Math.min(100, stats.threatScore + 5);
+          document.getElementById('stat-npc').textContent = stats.npc;
+        }
+        break;
+      case 'combat_outgoing':
+        stats.outgoing++;
+        document.getElementById('stat-outgoing').textContent = stats.outgoing;
+        break;
+      case 'turret_fired':
+        stats.turret++; stats.threatScore = Math.min(100, stats.threatScore + 40);
+        document.getElementById('stat-turret').textContent = stats.turret;
+        if (event.attacker && event.attacker !== 'Unknown pilot') trackAttacker(event.attacker);
+        break;
+      case 'structure_offline':
+      case 'structure_unanchored':
+      case 'structure_destroyed':
+        stats.offline++; stats.threatScore = Math.min(100, stats.threatScore + 50);
+        document.getElementById('stat-offline').textContent = stats.offline;
+        if (event.structure) updateStructure(event.structure, 'OFFLINE', null, event.structureId);
+        break;
+      case 'structure_online':
+        if (event.structure) updateStructure(event.structure, 'ONLINE', null, event.structureId);
+        break;
+      case 'structure_status_init':
+        if (event.structure) updateStructure(event.structure, event.status, event.chainName, event.structureId, event.structureType);
+        break;
+      case 'fuel_update':
+      case 'fuel_warning':
+      case 'fuel_critical':
+        if (event.quantity !== undefined) updateFuel(event.quantity, event.hoursRemaining);
+        break;
+    }
+    updateThreat();
+    setTimeout(() => { stats.threatScore = Math.max(0, stats.threatScore - 5); updateThreat(); }, 20000);
+  }
+
+  function updateFuel(quantity, hoursRemaining) {
+    const pct = Math.min(100, (hoursRemaining / MAX_FUEL_HOURS) * 100);
+    const days = Math.floor(hoursRemaining / 24);
+    const hrs  = Math.floor(hoursRemaining % 24);
+    const str  = days > 0 ? days + 'd ' + hrs + 'h' : hrs + 'h';
+    document.getElementById('fuel-cell-time').textContent  = str + ' remaining';
+    document.getElementById('fuel-cell-units').textContent = quantity + ' units';
+    const fill = document.getElementById('fuel-bar-fill');
+    fill.style.width = pct + '%';
+    if (hoursRemaining <= 6)       fill.style.background = '#c43a20';
+    else if (hoursRemaining <= 24) fill.style.background = '#c47a20';
+    else if (hoursRemaining <= 72) fill.style.background = '#a88a3a';
+    else                           fill.style.background = '#5a9a3a';
+  }
+
+  function updateThreat() {
+    const fill = document.getElementById('threat-fill');
+    const text = document.getElementById('threat-text');
+    const s = stats.threatScore;
+    fill.style.width = s + '%';
+    if (s === 0)      { fill.style.background='#5a9a3a'; text.style.color='#5a9a3a'; text.textContent='CLEAR'; }
+    else if (s < 30)  { fill.style.background='#c47a20'; text.style.color='#c47a20'; text.textContent='ELEVATED'; }
+    else if (s < 70)  { fill.style.background='#a84a10'; text.style.color='#a84a10'; text.textContent='HIGH'; }
+    else              { fill.style.background='#c43a20'; text.style.color='#c43a20'; text.textContent='CRITICAL'; }
+  }
+
+  function trackAttacker(name) {
+    if (!name) return;
+    attackers[name] = (attackers[name] || 0) + 1;
+    const list = document.getElementById('attackers-list');
+    const sorted = Object.entries(attackers).sort((a,b) => b[1]-a[1]).slice(0,6);
+    list.innerHTML = sorted.map(([n,c]) =>
+      '<div class="attacker-row"><span class="attacker-name">'+n+'</span><span class="attacker-count">'+c+'x</span></div>'
+    ).join('');
+  }
+
+  function addFeed(cls, meta, msg) {
+    const feed = document.getElementById('event-feed');
+    const ph = feed.querySelector('.event-msg');
+    if (ph && ph.textContent === 'Waiting for events...') feed.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'event ' + (cls || 'info');
+    div.innerHTML = '<div class="event-meta">'+meta+'</div><div class="event-msg">'+msg+'</div>';
+    const filterCls = [...div.classList].find(c => ['player','base','warning','structure','fuel','info'].includes(c));
+    if (filterCls && !activeFilters.has(filterCls)) div.style.display = 'none';
+    feed.prepend(div);
+    while (feed.children.length > 300) feed.removeChild(feed.lastChild);
+  }
+
+  function toggleFilter(btn) {
+    const f = btn.dataset.filter;
+    if (activeFilters.has(f)) { activeFilters.delete(f); btn.classList.remove('active'); }
+    else { activeFilters.add(f); btn.classList.add('active'); }
+    document.querySelectorAll('#event-feed .event').forEach(el => {
+      const c = [...el.classList].find(x => ['player','base','warning','structure','fuel','info'].includes(x));
+      if (c) el.style.display = activeFilters.has(c) ? '' : 'none';
+    });
+  }
+
+  function clearFeed() { document.getElementById('event-feed').innerHTML = ''; }
+
+  function triggerAlert(event) {
+    const flash = document.getElementById('alert-flash');
+    flash.classList.add('active');
+    setTimeout(() => flash.classList.remove('active'), 600);
+    const banner = document.getElementById('alert-banner');
+    banner.classList.add('show');
+    clearTimeout(alertBannerTimer);
+    alertBannerTimer = setTimeout(() => banner.classList.remove('show'), 10000);
+    if (Notification.permission === 'granted') {
+      new Notification('EVE Frontier IDS', { body: event.message });
+    }
+  }
+
+  if (Notification.permission === 'default') Notification.requestPermission();
+  initStructures();
+  connect();
+</script>
+</body>
+</html>

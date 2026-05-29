@@ -1,0 +1,59 @@
+body {
+  margin: 0;
+  background: #060606;
+  font-family: 'Courier New', monospace;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+.login-box {
+  width: 420px;
+  border: 1px solid #2a2118;
+  background: #080808;
+}
+.login-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid #1e1a12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #5a9a3a; box-shadow: 0 0 5px #5a9a3a44;
+}
+.title { font-size: 11px; color: #c8a951; letter-spacing: 4px; }
+.login-body { padding: 28px 24px; }
+.label { font-size: 8px; color: #4a3a2a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+.desc { font-size: 10px; color: #4a3a2a; line-height: 1.7; margin-bottom: 24px; }
+.connect-btn {
+  width: 100%; background: transparent; border: 1px solid #c8a951;
+  color: #c8a951; font-family: 'Courier New', monospace; font-size: 10px;
+  letter-spacing: 3px; padding: 12px; cursor: pointer; text-transform: uppercase; transition: all 0.15s;
+}
+.connect-btn:hover { background: rgba(200,169,81,0.1); }
+.connect-btn:disabled { border-color: #2a2118; color: #2a2118; cursor: not-allowed; }
+.no-vault { font-size: 10px; color: #4a3a2a; line-height: 1.7; padding: 14px; border: 1px solid #2a2118; display: flex; flex-direction: column; gap: 12px; }
+.install-link { color: #c8a951; font-size: 9px; letter-spacing: 1px; text-decoration: none; }
+.install-link:hover { text-decoration: underline; }
+.account-info { padding: 14px; border: 1px solid #2a2118; margin-bottom: 12px; }
+.account-label { font-size: 8px; color: #3a2e1a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.account-address { font-size: 13px; color: #c8a951; margin-bottom: 12px; letter-spacing: 2px; }
+.disconnect-btn {
+  background: transparent; border: 1px solid #2a2118; color: #3a2e1a;
+  font-family: 'Courier New', monospace; font-size: 8px; letter-spacing: 2px;
+  padding: 4px 10px; cursor: pointer; text-transform: uppercase; transition: all 0.15s;
+}
+.disconnect-btn:hover { border-color: #8b2a1a; color: #c43a20; }
+.status-msg { margin-top: 12px; font-size: 9px; color: #5a9a3a; letter-spacing: 1px; }
+.error-msg { margin-top: 12px; font-size: 9px; color: #c43a20; letter-spacing: 1px; }
+.login-footer { padding: 14px 24px; border-top: 1px solid #1e1a12; font-size: 8px; color: #2a2118; line-height: 1.7; }
+.version { margin-top: 20px; font-size: 8px; color: #1e1a12; letter-spacing: 2px; }
