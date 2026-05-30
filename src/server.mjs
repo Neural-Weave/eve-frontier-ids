@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import helmet from 'helmet';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
@@ -21,12 +22,23 @@ const PUBLIC_DIR = process.pkg
   ? path.join(path.dirname(process.execPath), 'public')
   : path.join(__dirname, '../public');
 
+// Absolute path for saved-wallet.json — safe for both dev and pkg binary
+const SAVED_WALLET_PATH = process.pkg
+  ? path.join(path.dirname(process.execPath), 'saved-wallet.json')
+  : path.join(__dirname, '../saved-wallet.json');
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false, // Disabled — dashboard uses inline scripts/styles
+}));
+
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
+
 app.get('/vault', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'vault/index.html')));
 app.get('/vault/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'vault/index.html')));
 app.use('/vault', express.static(path.join(PUBLIC_DIR, 'vault')));
@@ -54,9 +66,12 @@ app.get('/api/status', (req, res) => res.json(getConnectionStatus()));
 
 app.post('/api/connect', async (req, res) => {
   const { walletAddress } = req.body;
-  if (!walletAddress || !walletAddress.startsWith('0x')) {
-    return res.json({ success: false, error: 'Invalid wallet address — must start with 0x' });
+
+  // Strict Sui address validation — must be 0x followed by exactly 64 hex characters
+  if (!walletAddress || !/^0x[0-9a-fA-F]{64}$/.test(walletAddress)) {
+    return res.json({ success: false, error: 'Invalid wallet address — must be a valid Sui address (0x + 64 hex chars)' });
   }
+
   const result = await connectWallet(walletAddress, broadcast);
   if (result.success) {
     broadcast({ type: 'wallet_connected', characterName: result.characterName, structureCount: result.structureCount, walletAddress });
@@ -65,7 +80,7 @@ app.post('/api/connect', async (req, res) => {
 });
 
 app.post('/api/disconnect', (req, res) => {
-  try { fs.unlinkSync('./saved-wallet.json'); } catch(e) {}
+  try { fs.unlinkSync(SAVED_WALLET_PATH); } catch(e) {}
   broadcast({ type: 'wallet_disconnected' });
   res.json({ success: true });
 });
